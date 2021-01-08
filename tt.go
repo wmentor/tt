@@ -11,37 +11,46 @@ import (
 
 type Vars = jet.VarMap
 
-var (
-	tmpl *jet.Set = newTT()
-)
-
-func newTT(dirs ...string) *jet.Set {
-	nt := jet.NewHTMLSet(dirs...)
-	regFilters(nt)
-	return nt
+type TT struct {
+	tt *jet.Set
 }
 
-func MakeVars() Vars {
+var (
+	global *TT = New()
+
+	ErrNilTemplate error = errors.New("nil template object")
+)
+
+func New(dirs ...string) *TT {
+	tt := &TT{tt: jet.NewHTMLSet(dirs...)}
+	tt.regFilters()
+	return tt
+}
+
+func (tt *TT) MakeVars() Vars {
 	return make(Vars)
 }
 
-func regFilters(nt *jet.Set) {
-	nt.AddGlobal("noescape", jet.SafeWriter(func(w io.Writer, b []byte) {
+func MakeVars() Vars {
+	return global.MakeVars()
+}
+
+func (tt *TT) regFilters() {
+	tt.tt.AddGlobal("noescape", jet.SafeWriter(func(w io.Writer, b []byte) {
 		w.Write(b)
 	}))
 
-	nt.AddGlobal("pathescape", jet.SafeWriter(func(w io.Writer, b []byte) {
+	tt.tt.AddGlobal("pathescape", jet.SafeWriter(func(w io.Writer, b []byte) {
 		w.Write([]byte(url.PathEscape(string(b))))
 	}))
 
-	nt.AddGlobal("queryescape", jet.SafeWriter(func(w io.Writer, b []byte) {
+	tt.tt.AddGlobal("queryescape", jet.SafeWriter(func(w io.Writer, b []byte) {
 		w.Write([]byte(url.QueryEscape(string(b))))
 	}))
 }
 
-// open template directory
 func Open(dir string) {
-	tmpl = newTT(dir)
+	global = New(dir)
 }
 
 func renderTemplate(t *jet.Template, vars Vars) ([]byte, error) {
@@ -56,13 +65,28 @@ func renderTemplate(t *jet.Template, vars Vars) ([]byte, error) {
 
 }
 
-func Render(name string, vars Vars) ([]byte, error) {
-	if tmpl == nil {
-		err := errors.New("nit template object")
+func (tt *TT) Render(name string, vars Vars) ([]byte, error) {
+	if tt == nil || tt.tt == nil {
+		return nil, ErrNilTemplate
+	}
+
+	t, err := tt.tt.GetTemplate(name)
+	if err != nil {
 		return nil, err
 	}
 
-	t, err := tmpl.GetTemplate(name)
+	return renderTemplate(t, vars)
+}
+
+func Render(name string, vars Vars) ([]byte, error) {
+	return global.Render(name, vars)
+}
+
+func (tt *TT) RenderString(template string, vars Vars) ([]byte, error) {
+
+	nt := New()
+
+	t, err := nt.tt.LoadTemplate("template", template)
 	if err != nil {
 		return nil, err
 	}
@@ -71,13 +95,5 @@ func Render(name string, vars Vars) ([]byte, error) {
 }
 
 func RenderString(template string, vars Vars) ([]byte, error) {
-
-	nt := newTT()
-
-	t, err := nt.LoadTemplate("template", template)
-	if err != nil {
-		return nil, err
-	}
-
-	return renderTemplate(t, vars)
+	return global.RenderString(template, vars)
 }
